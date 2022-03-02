@@ -1,16 +1,13 @@
 import pygame
 from pygame import gfxdraw
-import numpy as np
 import glm
 
-import threading
-from time import sleep
-import time
 import random
 
 import verticles
 
 
+# Глобальные списки объектов и текстов
 objects = []
 text = []
 
@@ -28,13 +25,10 @@ class GameObject:
         # self.transform = glm.rotate(angle, glm.vec3(0, 1, 0)) * glm.rotate(glm.radians(45), glm.vec3(1, 0, 1))
 
 
-class FigureObject(GameObject):
+class FigureObject(GameObject):  # Наследуемый изменённый класс
     def __init__(self, position=verticles.cube, coords=(0, 0, 0)):
         super(FigureObject, self).__init__(position)
         self.transform = glm.scale(glm.vec3(0.3)) * glm.rotate(random.random() * 360, glm.vec3(random.random(), random.random(), random.random())) * glm.translate(glm.vec3(coords))
-    
-    def fixed_update(self):
-        pass
 
 
 class Camera:
@@ -60,16 +54,25 @@ class Engine:
         self.surface = pygame.display.set_mode(self.screen_size)
         self.background = (30, 100, 140)
 
+        self.score_file = open('score.txt', 'r')
+        self.max_score = self.score_file.read()
+        if not self.max_score:
+            self.max_score = '0'
+
         self.main_camera = Camera(aspect_ratio=width/height)
 
-    def draw_polygon(self, color, tri):
+    def draw_polygon(self, color, tri):  # Отрисовка полигонов
         tri = tuple((round(a[0] * self.screen_size[0] / 2 + self.screen_size[0] / 2),
                      round(a[1] * self.screen_size[1] / 2 + self.screen_size[1] / 2)) for a in tri)
 
         for i in range(0, len(tri), 3):
-            # gfxdraw.aapolygon(self.surface, (*tri[i][:2], *tri[i + 1][:2], *tri[i + 2][:2]), color)
             gfxdraw.filled_trigon(self.surface, *tri[i][:2], *tri[i + 1][:2], *tri[i + 2][:2], color)
-            # gfxdraw.aatrigon(self.surface, *tri[i][:2], *tri[i + 1][:2], *tri[i + 2][:2], pygame.Color(150, 50, 50))
+
+    def loosing_text(self, score):
+        text[0] = ('You loose', text[0][1])
+        text[1] = ('Your score: ' + str(score - 100), text[1][1])
+        text[2] = ('Max score: ' + self.max_score, text[2][1])
+        text[3] = ('', text[3][1])
 
     def run(self):
         score = 0
@@ -90,7 +93,7 @@ class Engine:
         while running:
 
             t = pygame.time.get_ticks()
-            delta_time = (t - last_frame) / 1000.0
+            delta_time = (t - last_frame) / 1000.0  # Подсчитывание времени кадра
             last_frame = t
 
             self.surface.fill(self.background)
@@ -108,10 +111,11 @@ class Engine:
                     start_flag = False
                     last_frame = 0
 
-                    text[0] = ('You loose', text[0][1])
-                    text[1] = ('Your score: ' + str(score - 100), text[1][1])
-                    text[2] = ('', text[2][1])
+                    if score - 100 > int(self.max_score):
+                        self.max_score = str(score - 100)
+                        open('score.txt', 'w').write(self.max_score)
 
+                    self.loosing_text(score)
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -128,7 +132,8 @@ class Engine:
 
                         text[0] = ('', text[0][1])
                         text[1] = ('', text[1][1])
-                        text[2] = (str(score), text[2][1])
+                        text[2] = ('', text[2][1])
+                        text[3] = (str(score), text[3][1])
                         start_flag = True
 
                         if 10 < objects[-1].color[0] < 150:
@@ -140,9 +145,11 @@ class Engine:
                             start_flag = False
                             last_frame = 0
 
-                            text[0] = ('You loose', text[0][1])
-                            text[1] = ('Your score: ' + str(score - 100), text[1][1])
-                            text[2] = ('', text[2][1])
+                            if score - 100 > int(self.max_score):
+                                self.max_score = str(score - 100)
+                                open('score.txt', 'w').write(self.max_score)
+
+                            self.loosing_text(score)
 
                         else:
                             color = 0
@@ -150,6 +157,10 @@ class Engine:
                             score += 100
 
                             obj = objects[-1]
+
+                            #####
+                            ## Генерация координат для объекта
+                            #####
 
                             rx, ry, rz = ((random.random() - 0.5) * 2, (random.random() - 0.5) * 2, (random.random() - 0.5) * 6)
 
@@ -186,18 +197,23 @@ class Engine:
 
                             flag_fifth = True
 
-
             if start_flag:
                 self.main_camera.view = self.main_camera.view * glm.rotate(delta_time * camera_rotation_deg,
-                                                                           glm.vec3(camera_rotation_axe_x, camera_rotation_axe_y, camera_rotation_axe_z))
+                                                                           glm.vec3(camera_rotation_axe_x,
+                                                                                    camera_rotation_axe_y,
+                                                                                    camera_rotation_axe_z))
 
             self.main_camera.fixed_update()
 
             for obj in objects:
                 obj.fixed_update()
+
+                ### Перемножение матриц для трансормации вида
+
                 screenspace_model_matrix = self.main_camera.projection * self.main_camera.view * obj.transform
                 poly = []
                 for i in range(0, len(obj.position), 3):
+                    ### Умножение матрицы на вектор для трансформации координат вершин в пространство матрицы
                     pos_vec4 = screenspace_model_matrix * glm.vec4(*obj.position[i:i + 3], 1.)
                     poly.append(pos_vec4)
                 self.draw_polygon(obj.color, poly)
@@ -212,21 +228,13 @@ class Engine:
         pygame.quit()
 
 
-def make_rect(*pos):
+def make_rect(*pos):  # Создание квадрата по неполному набору вершин
     return [*pos[:3], *pos[3:6], *pos[6:9], *pos[9:], *pos[3:6], *pos[6:9]]
 
 
 if __name__ == '__main__':
 
-    ### ###
-    ### SETTINGS
-    ### ###
-
     SCREEN_RESOLUTION = 1280, 720
-
-    ### ###
-    ### ###
-    ### ###
 
     engine = Engine(width=SCREEN_RESOLUTION[0], height=SCREEN_RESOLUTION[1])
 
@@ -238,6 +246,7 @@ if __name__ == '__main__':
     objects.append(obj1)
     text.append(('PRESS SPACE TO START', (SCREEN_RESOLUTION[0] // 2 - 120 * aspect_ratio, SCREEN_RESOLUTION[1] // 2)))
     text.append(('', (SCREEN_RESOLUTION[0] // 2 - 120 * aspect_ratio, SCREEN_RESOLUTION[1] // 1.5)))
+    text.append(('', (SCREEN_RESOLUTION[0] // 2 - 120 * aspect_ratio, SCREEN_RESOLUTION[1] // 1.2)))
     text.append(('', (0, 0)))
 
     # thr_render1 = threading.Thread(target=engine.run)
